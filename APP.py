@@ -75,25 +75,38 @@ def load_wikipedia_populations() -> pd.DataFrame:
     r = requests.get(WIKI_LARGEST_CITIES_URL, headers=headers, timeout=30)
     r.raise_for_status()
 
-    # IMPORTANT: pass HTML content, not the URL (avoids urllib blocks)
     tables = pd.read_html(r.text)
 
-    df = tables[0].copy()
-    df.columns = [str(c).strip().lower() for c in df.columns]
+    # Find the best candidate table: must have a "city"-like and "population"-like column
+    def score(t: pd.DataFrame) -> int:
+        cols = [str(c).lower() for c in t.columns]
+        s = 0
+        s += any("city" in c for c in cols) * 2
+        s += any("population" in c or "pop" in c for c in cols) * 2
+        s += any("country" in c for c in cols) * 2
+        return s
 
-    def find_col(patterns):
-        for p in patterns:
-            rx = re.compile(p)
-            for c in df.columns:
-                if rx.search(c):
-                    return c
+    best = max(tables, key=score)
+    df = best.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Normalize by selecting columns via contains (no regex fragility)
+    def pick(col_contains):
+        for c in df.columns:
+            lc = str(c).lower()
+            if any(x in lc for x in col_contains):
+                return c
         return None
 
-    city_c = find_col([r"^city", r"urban", r"agglomeration", r"name"])
-    country_c = find_col([r"^country", r"state"])
-    pop_c = find_col([r"pop", r"population"])
+    city_c = pick(["city"])
+    country_c = pick(["country"])
+    pop_c = pick(["population", "pop"])
 
-    if not all([city_c, country_c, pop_c]):
+    # Fallback: if country column missing, try "state" or "country/territory"
+    if country_c is None:
+        country_c = pick(["state", "territory"])
+
+    if city_c is None or pop_c is None or country_c is None:
         raise RuntimeError(f"Could not parse Wikipedia table columns: {df.columns.tolist()}")
 
     out = pd.DataFrame({
@@ -101,19 +114,20 @@ def load_wikipedia_populations() -> pd.DataFrame:
         "Country": df[country_c].astype(str),
         "Population": (
             df[pop_c].astype(str)
-            .str.replace(r"\[.*?\]", "", regex=True)   # strip citations
-            .str.replace(r"[^\d]", "", regex=True)     # digits only
-        ),
+            .str.replace(r"\[.*?\]", "", regex=True)
+            .str.replace(r"[^\d]", "", regex=True)
+        )
     })
 
     out["City"] = out["City"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
     out["Country"] = out["Country"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
     out["Population"] = pd.to_numeric(out["Population"], errors="coerce").fillna(0).astype("int64")
 
-    out["Source"] = "Wikipedia (List of largest cities)"
     out = out.dropna(subset=["City", "Country"])
     out = out[out["Population"] > 0].sort_values("Population", ascending=False).reset_index(drop=True)
+    out["Source"] = "Wikipedia (List of largest cities)"
     return out
+
 
 
 
@@ -431,4 +445,5 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
