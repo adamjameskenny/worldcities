@@ -117,7 +117,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
 
-    df = df.dropna(subset=["QID", "City", "Country"])
+        df = df.dropna(subset=["QID", "City", "Country"])
     df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
 
     df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
@@ -136,6 +136,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     df = df.drop(columns=["_t"])
 
     return df
+
 
 
 
@@ -211,6 +212,7 @@ st.caption(
     "Population source: Wikidata (P1082). Coordinates: Wikidata (P625). "
     "Definitions vary by city."
 )
+
 
 
 
