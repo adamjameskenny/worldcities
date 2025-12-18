@@ -9,6 +9,8 @@ import requests
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from decimal import Decimal, InvalidOperation
+
 
 
 # ================== PAGE ==================
@@ -64,6 +66,17 @@ def kpi_card(label: str, value: str, sub: str = ""):
 
 # ================== WIKIPEDIA POPULATION (TOP CITIES) ==================
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
+def parse_pop(v) -> int:
+    s = str(v or "").strip()
+    # keep digits, +, -, decimal point, exponent
+    s = re.sub(r"[^0-9eE\+\-\.]", "", s)
+    if not s:
+        return 0
+    try:
+        return int(Decimal(s))
+    except (InvalidOperation, ValueError):
+        return 0
+
 
 @st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
 def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
@@ -102,7 +115,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
             "QID": qid,
             "City": b.get("cityLabel", {}).get("value", ""),
             "Country": b.get("countryLabel", {}).get("value", ""),
-            "Population": int(float(b.get("pop", {}).get("value", "0") or 0)),
+            "Population": parse_pop(b.get("pop", {}).get("value")),
             "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
             "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
             "PopTime": pop_time or "",
@@ -443,6 +456,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
