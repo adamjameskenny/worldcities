@@ -103,79 +103,37 @@ HEADERS = {
 }
 
 # ------------------ DATA ------------------
-import os
-import io
-import zipfile
-import re
-import pandas as pd
-import requests
-import streamlit as st
-
-UCDB_ZIP_URL = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_UCDB_GLOBE_R2024A/GHS_UCDB_GLOBE_R2024A/V1-1/GHS_UCDB_GLOBE_R2024A_V1_1.zip"
-
-@st.cache_data(ttl=7*24*3600, show_spinner="Downloading GHSL UCDB…")
-def _download_ucdb_zip() -> bytes:
-    r = requests.get(UCDB_ZIP_URL, timeout=120)
-    r.raise_for_status()
-    return r.content
-
-def _pick_first_csv(z: zipfile.ZipFile) -> str:
-    csvs = [n for n in z.namelist() if n.lower().endswith(".csv")]
-    if not csvs:
-        raise RuntimeError("UCDB zip contains no CSV files.")
-    # Prefer anything that looks like the main UCDB table
-    csvs.sort(key=lambda n: (("ucdb" not in n.lower()), len(n)))
-    return csvs[0]
-
-def _find_col(cols, patterns):
-    cols_l = {c.lower(): c for c in cols}
-    for p in patterns:
-        rx = re.compile(p)
-        for lc, orig in cols_l.items():
-            if rx.search(lc):
-                return orig
-    return None
-
-@st.cache_data(ttl=24*3600, show_spinner="Loading city table…")
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner="Loading Wikipedia city data…")
 def load_data(top_n: int = 500) -> pd.DataFrame:
-    content = _download_ucdb_zip()
-    z = zipfile.ZipFile(io.BytesIO(content))
+    url = "https://en.wikipedia.org/wiki/List_of_largest_cities"
+    tables = pd.read_html(url)
 
-    csv_name = _pick_first_csv(z)
-    with z.open(csv_name) as f:
-        df = pd.read_csv(f, low_memory=False)
+    # The first table is the ranked city population table
+    df = tables[0]
 
-    # Heuristics for common fields (UCDB schema can evolve)
-    city_col = _find_col(df.columns, [r"^name$", r"city", r"uc_name"])
-    country_col = _find_col(df.columns, [r"country", r"cntr", r"iso"])
-    lat_col = _find_col(df.columns, [r"^lat", r"latitude"])
-    lon_col = _find_col(df.columns, [r"^lon", r"lng", r"longitude"])
+    # Normalize column names (Wikipedia can change labels slightly)
+    df.columns = [c.lower() for c in df.columns]
 
-    # Try to find a “population in 2025” column (or nearest)
-    pop_col = _find_col(df.columns, [r"pop.*2025", r"p_?2025", r"population.*2025"])
-    if pop_col is None:
-        # fall back to any population column
-        pop_col = _find_col(df.columns, [r"^pop", r"population"])
-
-    if not all([city_col, country_col, pop_col]):
-        raise RuntimeError(
-            f"Could not detect required columns. Detected: city={city_col}, country={country_col}, pop=({pop_col})."
-        )
-
-    out = pd.DataFrame({
-        "City": df[city_col].astype(str),
-        "Country": df[country_col].astype(str),
-        "Population": pd.to_numeric(df[pop_col], errors="coerce"),
-        "Latitude": pd.to_numeric(df[lat_col], errors="coerce") if lat_col else pd.NA,
-        "Longitude": pd.to_numeric(df[lon_col], errors="coerce") if lon_col else pd.NA,
+    df = df.rename(columns={
+        "city": "City",
+        "country": "Country",
+        "population": "Population",
     })
 
-    out["Population"] = out["Population"].fillna(0).astype("int64")
-    out["Source"] = "GHSL UCDB (JRC)"
+    # Clean population
+    df["Population"] = (
+        df["Population"]
+        .astype(str)
+        .str.replace(r"[^\d]", "", regex=True)
+        .astype("int64")
+    )
 
-    out = out.dropna(subset=["City", "Country"])
-    out = out.sort_values("Population", ascending=False).head(top_n).reset_index(drop=True)
-    return out
+    df = df[["City", "Country", "Population"]]
+    df["Source"] = "Wikipedia (List of largest cities)"
+
+    df = df.sort_values("Population", ascending=False).head(top_n).reset_index(drop=True)
+    return df
+
 
 
 
@@ -536,6 +494,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
