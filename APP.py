@@ -21,12 +21,24 @@ def load_data(top_n: int = 100) -> pd.DataFrame:
     try:
         r = requests.get(WPR_URL, headers=HEADERS, timeout=15)
         if r.status_code == 200:
-            df = pd.DataFrame(r.json())
-            df = df.rename(columns={"name": "City", "country": "Country", "population": "Population"})
-            df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
-            df = df.sort_values("Population", ascending=False).head(top_n)
-            df["Source"] = "WorldPopulationReview"
-            return df.reset_index(drop=True)
+           df = pd.DataFrame(r.json())
+df = df.rename(columns={"name": "City", "country": "Country", "population": "Population"})
+
+# Try common coordinate field names
+if "lat" in df.columns and "lng" in df.columns:
+    df = df.rename(columns={"lat": "Latitude", "lng": "Longitude"})
+elif "latitude" in df.columns and "longitude" in df.columns:
+    df = df.rename(columns={"latitude": "Latitude", "longitude": "Longitude"})
+
+df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
+for c in ["Latitude", "Longitude"]:
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+df = df.sort_values("Population", ascending=False).head(top_n)
+df["Source"] = "WorldPopulationReview"
+return df.reset_index(drop=True)
+
         else:
             # Don’t crash; fall through to GeoNames
             st.warning(f"WPR fetch failed (HTTP {r.status_code}). Falling back to GeoNames.")
@@ -47,10 +59,22 @@ def load_data(top_n: int = 100) -> pd.DataFrame:
         ]
         gdf = pd.read_csv(f, sep="\t", header=None, names=cols, dtype={"population": "int64"}, low_memory=False)
 
-    df = gdf.rename(columns={"name": "City", "country_code": "Country", "population": "Population"})
-    df = df[["City", "Country", "Population"]].sort_values("Population", ascending=False).head(top_n)
-    df["Source"] = "GeoNames (cities15000)"
-    return df.reset_index(drop=True)
+ df = gdf.rename(columns={
+    "name": "City",
+    "country_code": "Country",
+    "population": "Population",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+})
+df = df[["City", "Country", "Population", "Latitude", "Longitude"]]
+df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
+df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
+df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
+
+df = df.sort_values("Population", ascending=False).head(top_n)
+df["Source"] = "GeoNames (cities15000)"
+return df.reset_index(drop=True)
+
 
 # ---------- LOAD DATA ----------
 try:
@@ -99,6 +123,25 @@ st.dataframe(
     use_container_width=True,
     height=600
 )
+# ---------- MAP ----------
+map_df = filtered.dropna(subset=["Latitude", "Longitude"]).copy()
+if not map_df.empty:
+    st.subheader("City Map")
+    fig_map = px.scatter_geo(
+        map_df,
+        lat="Latitude",
+        lon="Longitude",
+        size="Population",
+        hover_name="City",
+        hover_data={"Country": True, "Population": ":,", "Latitude": False, "Longitude": False},
+        projection="natural earth",
+        title="Top Cities (bubble size = population)"
+    )
+    fig_map.update_layout(height=650)
+    st.plotly_chart(fig_map, use_container_width=True)
+else:
+    st.info("No coordinates available to plot a map for the current filter.")
+
 
 # ---------- CHART ----------
 fig = px.bar(
@@ -125,4 +168,5 @@ st.caption(
     "Population figures are estimates, auto-refreshed hourly. "
     "True real-time city population tracking does not exist."
 )
+
 
