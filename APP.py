@@ -103,8 +103,18 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-  top_n = st.select_slider("Top N cities", options=[50, 100, 150, 200, 250], value=250)
-map_n = st.select_slider("Cities shown on map", options=[25, 50, 100, 150, 250], value=min(100, top_n))
+    top_n = st.select_slider(
+        "Top N cities",
+        options=[50, 100, 150, 200, 250],
+        value=250,
+    )
+
+    map_n = st.select_slider(
+        "Cities shown on map",
+        options=[25, 50, 100, 150, 250],
+        value=min(100, top_n),
+    )
+
 
 
     df_all = load_data()
@@ -244,4 +254,5 @@ with tab_about:
 - Fallback: GeoNames (stable, broad coverage; populations are also estimates).
         """
     )
+
 
