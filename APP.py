@@ -9,7 +9,11 @@ import streamlit as st
 import plotly.express as px
 
 # ------------------ PAGE ------------------
-st.set_page_config(page_title="World City Populations", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="World City Populations",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 st.markdown(
     """
@@ -21,7 +25,7 @@ st.markdown(
       .subtitle { color:#94a3b8; margin-top:-6px; }
       .chip { display:inline-block; padding:4px 10px; border-radius:999px;
               background: rgba(148,163,184,0.12); border: 1px solid rgba(148,163,184,0.18);
-              color:#cbd5e1; font-size:12px; }
+              color:#cbd5e1; font-size:12px; margin-right: 6px; }
       div[data-testid="stMetric"] { background: rgba(2,6,23,0.55); border: 1px solid rgba(148,163,184,0.14);
                                    padding: 14px 14px; border-radius: 16px; }
     </style>
@@ -95,11 +99,11 @@ def load_data() -> pd.DataFrame:
     return df[["City", "Country", "Population", "Latitude", "Longitude", "Source"]].dropna(subset=["City", "Country"])
 
 
-# ------------------ SIDEBAR CONTROLS ------------------
+# ------------------ SIDEBAR ------------------
 with st.sidebar:
     st.markdown("### Controls")
 
-    if st.button("Refresh data (clears cache)"):
+    if st.button("Refresh data (clear cache)"):
         st.cache_data.clear()
         st.rerun()
 
@@ -111,21 +115,19 @@ with st.sidebar:
 
     map_n = st.select_slider(
         "Cities shown on map",
-        options=[25, 50, 100, 150, 250],
+        options=[25, 50, 100, 150, 200, 250],
         value=min(100, top_n),
     )
 
-
-
     df_all = load_data()
     max_pop = int(df_all["Population"].max()) if not df_all.empty else 0
+
     min_pop = st.slider(
         "Minimum population",
         min_value=0,
         max_value=max_pop if max_pop > 0 else 1,
         value=0,
-        step=max(1, max_pop // 200) if max_pop > 0 else 1,
-        format="%d",
+        step=max(1, max_pop // 250) if max_pop > 0 else 1,
     )
 
     countries = sorted(df_all["Country"].dropna().unique().tolist())
@@ -134,7 +136,7 @@ with st.sidebar:
     query = st.text_input("Search", placeholder="City or country…")
 
     st.markdown("---")
-    st.caption("Cache refresh: ~hourly (data source dependent).")
+    st.caption("Cache refresh: ~hourly (source dependent).")
 
 # ------------------ FILTER / PREP ------------------
 df = df_all.copy()
@@ -152,20 +154,21 @@ if query:
 df = df.sort_values("Population", ascending=False).head(top_n).reset_index(drop=True)
 df.insert(0, "Rank", df.index + 1)
 
-# bubble scale: sqrt(pop) to reduce dominance
-df["PopScale"] = df["Population"].apply(lambda x: math.sqrt(max(x, 0)))
+# bubble scaling
+df["PopScale"] = df["Population"].apply(lambda x: math.sqrt(max(int(x), 0)))
 
-# ------------------ HEADER + METRICS ------------------
+# ------------------ HEADER ------------------
+source_chip = df["Source"].iloc[0] if not df.empty else "—"
 st.markdown(
     f"""
     <div class="title-wrap">
       <div class="badge">🌍</div>
       <div>
         <div style="font-size: 40px; font-weight: 750; line-height: 1.05;">World City Populations</div>
-        <div class="subtitle">Top {top_n} • Filterable • Map + table + charts</div>
+        <div class="subtitle">Top {top_n} • Map + table + charts</div>
       </div>
     </div>
-    <span class="chip">Source: {df['Source'].iloc[0] if not df.empty else "—"}</span>
+    <span class="chip">Source: {source_chip}</span>
     <span class="chip">Updated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</span>
     """,
     unsafe_allow_html=True,
@@ -173,11 +176,19 @@ st.markdown(
 
 st.write("")
 
-c1, c2, c3, c4 = st.columns(4)
+# ------------------ METRICS ------------------
+total_pop = int(df["Population"].sum()) if not df.empty else 0
+median_pop = int(df["Population"].median()) if not df.empty else 0
+over_10m = int((df["Population"] >= 10_000_000).sum()) if not df.empty else 0
+largest_city = str(df.iloc[0]["City"]) if not df.empty else "—"
+largest_pop = f"{int(df.iloc[0]['Population']):,}" if not df.empty else "—"
+
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Cities shown", f"{len(df):,}")
-c2.metric("Largest city", str(df.iloc[0]["City"]) if not df.empty else "—")
-c3.metric("Largest population", f"{int(df.iloc[0]['Population']):,}" if not df.empty else "—")
-c4.metric("Distinct countries", f"{df['Country'].nunique():,}" if not df.empty else "—")
+c2.metric("Largest city", largest_city)
+c3.metric("Largest pop", largest_pop)
+c4.metric("Median pop", f"{median_pop:,}")
+c5.metric("Cities ≥ 10M", f"{over_10m:,}")
 
 st.write("")
 
@@ -196,12 +207,7 @@ with tab_map:
             lon="Longitude",
             size="PopScale",
             hover_name="City",
-            hover_data={
-                "Country": True,
-                "Population": ":,",
-                "Rank": True,
-                "PopScale": False,
-            },
+            hover_data={"Country": True, "Population": ":,", "Rank": True, "PopScale": False},
             zoom=1,
             height=680,
         )
@@ -211,7 +217,6 @@ with tab_map:
         )
         st.plotly_chart(fig_map, use_container_width=True)
 
-
 with tab_table:
     show_cols = ["Rank", "City", "Country", "Population", "Source"]
     st.dataframe(
@@ -219,50 +224,32 @@ with tab_table:
         use_container_width=True,
         height=680,
     )
-
     csv = df[show_cols].to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", data=csv, file_name=f"top_{top_n}_cities.csv", mime="text/csv")
 
 with tab_charts:
     left, right = st.columns([1, 1])
-log_x = st.toggle("Log scale (Population)", value=False)
 
     with left:
-        k = st.select_slider("Bar chart: Top K", options=[10, 20, 50], value=min(20, len(df)))
-        fig_bar = px.bar(
-            df.head(k),
-            x="Population",
-            y="City",
-            orientation="h",
-            height=720,
-        )
+        k = st.select_slider("Bar chart: Top K", options=[10, 20, 50, 100], value=min(20, len(df)))
+        log_x = st.toggle("Log scale (Population)", value=False)
+        fig_bar = px.bar(df.head(k), x="Population", y="City", orientation="h", height=720)
         fig_bar.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=0, t=40, b=0))
+        if log_x:
+            fig_bar.update_xaxes(type="log")
         st.plotly_chart(fig_bar, use_container_width=True)
-if log_x:
-    fig_bar.update_xaxes(type="log")
 
     with right:
-        fig_country = px.treemap(
-            df,
-            path=["Country", "City"],
-            values="Population",
-            height=720,
-        )
-        fig_country.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_country, use_container_width=True)
+        fig_tree = px.treemap(df, path=["Country", "City"], values="Population", height=720)
+        fig_tree.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_tree, use_container_width=True)
 
 with tab_about:
     st.markdown(
         """
-**What you’re seeing**
-- City populations are **estimates** (typically updated monthly/quarterly at best).
-- The app refreshes its cached data about **hourly**; press **Refresh data** to force reload.
-
-**Data source behavior**
-- Primary: WorldPopulationReview (can be blocked on some hosts).
-- Fallback: GeoNames (stable, broad coverage; populations are also estimates).
+**Notes**
+- City populations are **estimates** (not live counts).
+- This app caches results about **hourly** (source dependent).
+- Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
-
-
-
