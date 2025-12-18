@@ -3,6 +3,9 @@ import zipfile
 import requests
 import pandas as pd
 import streamlit as st
+from datetime import datetime
+import plotly.express as px
+
 
 WPR_URL = "https://worldpopulationreview.com/static/cities.json"
 GEONAMES_URL = "https://download.geonames.org/export/dump/cities15000.zip"  # public + stable
@@ -49,6 +52,16 @@ def load_data(top_n: int = 100) -> pd.DataFrame:
     df["Source"] = "GeoNames (cities15000)"
     return df.reset_index(drop=True)
 
+# ---------- LOAD DATA ----------
+try:
+    df = load_data(top_n=100)
+except Exception:
+    st.error("Failed to load city population data.")
+    st.stop()
+
+if df is None or df.empty:
+    st.error("No population data available.")
+    st.stop()
 
 # ---------- HEADER ----------
 st.markdown(
@@ -63,7 +76,7 @@ st.markdown(
 
 # ---------- METRICS ----------
 c1, c2, c3 = st.columns(3)
-c1.metric("Cities Tracked", "100")
+c1.metric("Cities Tracked", f"{len(df):,}")
 c2.metric("Largest City", df.iloc[0]["City"])
 c3.metric("Last Update", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
 
@@ -112,3 +125,4 @@ st.caption(
     "Population figures are estimates, auto-refreshed hourly. "
     "True real-time city population tracking does not exist."
 )
+
