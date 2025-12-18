@@ -62,8 +62,6 @@ def kpi_card(label: str, value: str, sub: str = ""):
         """,
         unsafe_allow_html=True,
     )
-
-
 # ================== WIKIPEDIA POPULATION (TOP CITIES) ==================
 @st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
 def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
@@ -467,6 +465,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
