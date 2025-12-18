@@ -212,8 +212,6 @@ with st.sidebar:
 # ================== LOAD + MERGE DATA ==================
 df_all = load_wikidata_cities(top_n=500)
 
-df_all = pop_df.merge(coords_df[["City", "Latitude", "Longitude"]], on="City", how="left")
-
 # Filter/search
 df = df_all.copy()
 if query:
@@ -445,6 +443,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
