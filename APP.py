@@ -229,7 +229,14 @@ with tab_map:
     map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
 
     sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
-    selected = df.iloc[sel_rows[0]] if sel_rows else None
+# If selection is coming from st.dataframe event (newer), it won’t be here.
+# So we also fall back to "selected_row" if it exists.
+selected = None
+if "selected_row" in locals() and selected_row is not None:
+    selected = df[df["Rank"] == int(selected_row["Rank"])].iloc[0]
+elif sel_rows:
+    selected = df.iloc[sel_rows[0]]
+
 
     if map_df.empty:
         st.info("No coordinates available for the current selection.")
@@ -348,3 +355,4 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
