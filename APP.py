@@ -121,10 +121,14 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     df = df.dropna(subset=["QID", "City", "Country"]).copy()
 
     # Harden dtypes (prevents pandas sort issues)
-    df["QID"] = df["QID"].astype(str)
+        df["QID"] = df["QID"].astype(str)
     df["City"] = df["City"].astype(str)
     df["Country"] = df["Country"].astype(str)
-    df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
+    df["Population"] = (
+        pd.to_numeric(df["Population"], errors="coerce")
+        .fillna(0)
+        .astype("int64")
+    )
 
     # Parse time robustly; make tz-naive
     df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
@@ -134,16 +138,26 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     df = df[df["Population"] > 0]
 
     # One row per city entity: keep latest popTime, then largest population
-    df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False], kind="mergesort")
+    df = df.sort_values(
+        ["QID", "_t", "Population"],
+        ascending=[True, False, False],
+        kind="mergesort",
+    )
     df = df.drop_duplicates(subset=["QID"], keep="first")
 
     # Safety: collapse exact same label duplicates
     df = df.sort_values("Population", ascending=False)
     df = df.drop_duplicates(subset=["City", "Country"], keep="first")
 
-    df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
+    df = (
+        df.sort_values("Population", ascending=False)
+        .head(int(top_n))
+        .reset_index(drop=True)
+    )
+
     df = df.drop(columns=["_t"])
     return df
+
 
 
 
@@ -459,6 +473,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
