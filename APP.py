@@ -227,97 +227,100 @@ tab_map, tab_table, tab_charts, tab_about = st.tabs(["Map", "Table", "Charts", "
 
 with tab_map:
     map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
-sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
-selected = df.iloc[sel_rows[0]] if sel_rows else None
 
-if map_df.empty:
-    st.info("No coordinates available for the current selection.")
-else:
-    fig_map = px.scatter_mapbox(
-        map_df,
-        lat="Latitude",
-        lon="Longitude",
-        size="PopScale",
-        hover_name="City",
-        hover_data={"Country": True, "Population": ":,", "Rank": True, "PopScale": False},
-        zoom=1,
-        height=680,
-    )
-    fig_map.update_layout(
-        mapbox_style="carto-darkmatter",
-        margin=dict(l=0, r=0, t=0, b=0),
-    )
+    sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
+    selected = df.iloc[sel_rows[0]] if sel_rows else None
 
-    # highlight selected city (if it has coords)
-    if selected is not None and pd.notna(selected["Latitude"]) and pd.notna(selected["Longitude"]):
-        hi = pd.DataFrame([selected])
-        fig_hi = px.scatter_mapbox(
-            hi,
+    if map_df.empty:
+        st.info("No coordinates available for the current selection.")
+    else:
+        fig_map = px.scatter_mapbox(
+            map_df,
             lat="Latitude",
             lon="Longitude",
+            size="PopScale",
             hover_name="City",
-            zoom=2,
+            hover_data={"Country": True, "Population": ":,", "Rank": True, "PopScale": False},
+            zoom=1,
             height=680,
         )
-        fig_hi.update_traces(marker={"size": 22, "opacity": 0.95})
-        for tr in fig_hi.data:
-            fig_map.add_trace(tr)
+        fig_map.update_layout(
+            mapbox_style="carto-darkmatter",
+            margin=dict(l=0, r=0, t=0, b=0),
+        )
 
-    st.plotly_chart(fig_map, use_container_width=True)
+        # highlight selected city (if it has coords)
+        if selected is not None and pd.notna(selected["Latitude"]) and pd.notna(selected["Longitude"]):
+            hi = pd.DataFrame([selected])
+            fig_hi = px.scatter_mapbox(
+                hi,
+                lat="Latitude",
+                lon="Longitude",
+                hover_name="City",
+                zoom=2,
+                height=680,
+            )
+            fig_hi.update_traces(marker={"size": 22, "opacity": 0.95})
+            for tr in fig_hi.data:
+                fig_map.add_trace(tr)
 
+        st.plotly_chart(fig_map, use_container_width=True)
 
 with tab_table:
-    show_cols = ["Rank", "City", "Country", "Population", "Source"]
-   st.markdown("### Cities")
+    st.markdown("### Cities")
 
-table_cols = ["Rank", "City", "Country", "Population", "Source", "Latitude", "Longitude"]
-table_df = df[table_cols].copy()
+    table_cols = ["Rank", "City", "Country", "Population", "Source", "Latitude", "Longitude"]
+    table_df = df[table_cols].copy()
 
-st.data_editor(
-    table_df,
-    use_container_width=True,
-    height=520,
-    hide_index=True,
-    disabled=table_cols,              # read-only
-    selection_mode="single-row",
-    key="city_table",
-)
-
-sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
-selected_row = table_df.iloc[sel_rows[0]] if sel_rows else None
-
-colA, colB = st.columns([2, 1])
-with colA:
-    csv = df[["Rank", "City", "Country", "Population", "Source"]].to_csv(index=False).encode("utf-8")
-    st.download_button("Download CSV", data=csv, file_name=f"top_{top_n}_cities.csv", mime="text/csv")
-
-with colB:
-    st.caption("Select a row to see details.")
-    if selected_row is not None:
-    st.markdown("### Selected city")
-    st.markdown(
-        f"""
-        <div style="background: rgba(2,6,23,0.55);
-                    border: 1px solid rgba(148,163,184,0.16);
-                    border-radius: 18px; padding: 14px;">
-          <div style="font-size:18px; font-weight:850; color:#e5e7eb;">
-            {selected_row['City']}
-          </div>
-          <div style="color:#94a3b8; margin-top:4px;">
-            {selected_row['Country']} • Rank {int(selected_row['Rank'])}
-          </div>
-          <div style="margin-top:10px; color:#e5e7eb;">
-            Population: <b>{fmt_int(selected_row['Population'])}</b>
-          </div>
-          <div style="color:#94a3b8; margin-top:6px;">
-            Source: {selected_row['Source']}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.data_editor(
+        table_df,
+        use_container_width=True,
+        height=520,
+        hide_index=True,
+        disabled=table_cols,          # read-only
+        selection_mode="single-row",
+        key="city_table",
     )
 
+    sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
+    selected_row = table_df.iloc[sel_rows[0]] if sel_rows else None
 
+    colA, colB = st.columns([2, 1])
+    with colA:
+        csv = df[["Rank", "City", "Country", "Population", "Source"]].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV",
+            data=csv,
+            file_name=f"top_{top_n}_cities.csv",
+            mime="text/csv",
+        )
+
+    with colB:
+        st.caption("Select a row to see details.")
+
+    if selected_row is not None:
+        st.markdown("### Selected city")
+        st.markdown(
+            f"""
+            <div style="background: rgba(2,6,23,0.55);
+                        border: 1px solid rgba(148,163,184,0.16);
+                        border-radius: 18px; padding: 14px;">
+              <div style="font-size:18px; font-weight:850; color:#e5e7eb;">
+                {selected_row['City']}
+              </div>
+              <div style="color:#94a3b8; margin-top:4px;">
+                {selected_row['Country']} • Rank {int(selected_row['Rank'])}
+              </div>
+              <div style="margin-top:10px; color:#e5e7eb;">
+                Population: <b>{fmt_int(selected_row['Population'])}</b>
+              </div>
+              <div style="color:#94a3b8; margin-top:6px;">
+                Source: {selected_row['Source']}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 with tab_charts:
     left, right = st.columns([1, 1])
@@ -340,9 +343,8 @@ with tab_about:
     st.markdown(
         """
 **Notes**
-- City populations are **estimates** (not live counts).
-- This app caches results about **hourly** (source dependent).
+- City populations are estimates (not live counts).
+- This app caches results about hourly (source dependent).
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
-
