@@ -225,18 +225,80 @@ with c5: kpi_card("Cities ≥ 10M", fmt_int(over_10m), f"Total shown: {fmt_int(t
 # ------------------ TABS ------------------
 tab_map, tab_table, tab_charts, tab_about = st.tabs(["Map", "Table", "Charts", "About"])
 
+# We'll store the selected city rank in session_state so Map + Table stay in sync
+if "selected_rank" not in st.session_state:
+    st.session_state.selected_rank = None
+
+with tab_table:
+    st.markdown("### Cities")
+
+    table_cols = ["Rank", "City", "Country", "Population", "Source", "Latitude", "Longitude"]
+    table_df = df[table_cols].copy()
+
+    event = st.dataframe(
+        table_df,
+        use_container_width=True,
+        height=520,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="city_table",
+    )
+
+    sel_rows = []
+    try:
+        sel_rows = event.selection.rows
+    except Exception:
+        sel_rows = []
+
+    selected_row = table_df.iloc[sel_rows[0]] if sel_rows else None
+    if selected_row is not None:
+        st.session_state.selected_rank = int(selected_row["Rank"])
+
+    colA, colB = st.columns([2, 1])
+    with colA:
+        csv = df[["Rank", "City", "Country", "Population", "Source"]].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV",
+            data=csv,
+            file_name=f"top_{top_n}_cities.csv",
+            mime="text/csv",
+        )
+    with colB:
+        st.caption("Select a row to see details and highlight it on the map.")
+
+    if selected_row is not None:
+        st.markdown("### Selected city")
+        st.markdown(
+            f"""
+            <div style="background: rgba(2,6,23,0.55);
+                        border: 1px solid rgba(148,163,184,0.16);
+                        border-radius: 18px; padding: 14px;">
+              <div style="font-size:18px; font-weight:850; color:#e5e7eb;">
+                {selected_row['City']}
+              </div>
+              <div style="color:#94a3b8; margin-top:4px;">
+                {selected_row['Country']} • Rank {int(selected_row['Rank'])}
+              </div>
+              <div style="margin-top:10px; color:#e5e7eb;">
+                Population: <b>{fmt_int(selected_row['Population'])}</b>
+              </div>
+              <div style="color:#94a3b8; margin-top:6px;">
+                Source: {selected_row['Source']}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 with tab_map:
     map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
 
-    sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
-# If selection is coming from st.dataframe event (newer), it won’t be here.
-# So we also fall back to "selected_row" if it exists.
-selected = None
-if "selected_row" in locals() and selected_row is not None:
-    selected = df[df["Rank"] == int(selected_row["Rank"])].iloc[0]
-elif sel_rows:
-    selected = df.iloc[sel_rows[0]]
-
+    selected = None
+    if st.session_state.selected_rank is not None:
+        hit = df[df["Rank"] == st.session_state.selected_rank]
+        if not hit.empty:
+            selected = hit.iloc[0]
 
     if map_df.empty:
         st.info("No coordinates available for the current selection.")
@@ -273,62 +335,6 @@ elif sel_rows:
 
         st.plotly_chart(fig_map, use_container_width=True)
 
-with tab_table:
-    st.markdown("### Cities")
-
-    table_cols = ["Rank", "City", "Country", "Population", "Source", "Latitude", "Longitude"]
-    table_df = df[table_cols].copy()
-
-    st.data_editor(
-        table_df,
-        use_container_width=True,
-        height=520,
-        hide_index=True,
-        disabled=table_cols,          # read-only
-        selection_mode="single-row",
-        key="city_table",
-    )
-
-    sel_rows = st.session_state.get("city_table", {}).get("selection", {}).get("rows", [])
-    selected_row = table_df.iloc[sel_rows[0]] if sel_rows else None
-
-    colA, colB = st.columns([2, 1])
-    with colA:
-        csv = df[["Rank", "City", "Country", "Population", "Source"]].to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "Download CSV",
-            data=csv,
-            file_name=f"top_{top_n}_cities.csv",
-            mime="text/csv",
-        )
-
-    with colB:
-        st.caption("Select a row to see details.")
-
-    if selected_row is not None:
-        st.markdown("### Selected city")
-        st.markdown(
-            f"""
-            <div style="background: rgba(2,6,23,0.55);
-                        border: 1px solid rgba(148,163,184,0.16);
-                        border-radius: 18px; padding: 14px;">
-              <div style="font-size:18px; font-weight:850; color:#e5e7eb;">
-                {selected_row['City']}
-              </div>
-              <div style="color:#94a3b8; margin-top:4px;">
-                {selected_row['Country']} • Rank {int(selected_row['Rank'])}
-              </div>
-              <div style="margin-top:10px; color:#e5e7eb;">
-                Population: <b>{fmt_int(selected_row['Population'])}</b>
-              </div>
-              <div style="color:#94a3b8; margin-top:6px;">
-                Source: {selected_row['Source']}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
 with tab_charts:
     left, right = st.columns([1, 1])
 
@@ -355,4 +361,5 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
