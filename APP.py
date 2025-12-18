@@ -65,35 +65,22 @@ def kpi_card(label: str, value: str, sub: str = ""):
 
 
 # ================== WIKIPEDIA POPULATION (TOP CITIES) ==================
-WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
-def parse_pop(v) -> int:
-    s = str(v or "").strip()
-    # keep digits, +, -, decimal point, exponent
-    s = re.sub(r"[^0-9eE\+\-\.]", "", s)
-    if not s:
-        return 0
-    try:
-        return int(Decimal(s))
-    except (InvalidOperation, ValueError):
-        return 0
-
-
 @st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
 def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
-    query = f"""
-    SELECT ?city ?cityLabel ?countryLabel ?pop ?popTime ?lat ?lon WHERE {{
+    query = """
+    SELECT ?city ?cityLabel ?countryLabel ?pop ?popTime ?lat ?lon WHERE {
       ?city wdt:P31/wdt:P279* wd:Q515 ;
             wdt:P17 ?country ;
             wdt:P625 ?coord ;
             p:P1082 ?st .
       ?st ps:P1082 ?pop .
-      OPTIONAL {{ ?st pq:P585 ?popTime . }}
+      OPTIONAL { ?st pq:P585 ?popTime . }
 
       BIND(geof:latitude(?coord) AS ?lat)
       BIND(geof:longitude(?coord) AS ?lon)
 
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
-    }}
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+    }
     """
 
     headers = {
@@ -101,7 +88,12 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
         "Accept": "application/sparql-results+json",
     }
 
-    r = requests.get(WIKIDATA_SPARQL_URL, params={"query": query, "format": "json"}, headers=headers, timeout=90)
+    r = requests.get(
+        WIKIDATA_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        headers=headers,
+        timeout=90,
+    )
     r.raise_for_status()
     data = r.json()["results"]["bindings"]
 
@@ -109,42 +101,50 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     for b in data:
         city_uri = b["city"]["value"]
         qid = city_uri.rsplit("/", 1)[-1]
-
         pop_time = b.get("popTime", {}).get("value")  # ISO string or missing
-        rows.append({
-            "QID": qid,
-            "City": b.get("cityLabel", {}).get("value", ""),
-            "Country": b.get("countryLabel", {}).get("value", ""),
-            "Population": parse_pop(b.get("pop", {}).get("value")),
-            "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
-            "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
-            "PopTime": pop_time or "",
-            "PopYear": (pop_time[:4] if pop_time else ""),
-            "Source": "Wikidata (P1082)",
-        })
+
+        rows.append(
+            {
+                "QID": qid,
+                "City": b.get("cityLabel", {}).get("value", ""),
+                "Country": b.get("countryLabel", {}).get("value", ""),
+                "Population": parse_pop(b.get("pop", {}).get("value")),
+                "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
+                "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
+                "PopTime": pop_time or "",
+                "PopYear": (pop_time[:4] if pop_time else ""),
+                "Source": "Wikidata (P1082)",
+            }
+        )
 
     df = pd.DataFrame(rows)
     df = df.dropna(subset=["QID", "City", "Country"]).copy()
-    # harden dtypes (prevents pandas sort TypeError)
-df["QID"] = df["QID"].astype(str)
-df["City"] = df["City"].astype(str)
-df["Country"] = df["Country"].astype(str)
-df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
 
-# parse time robustly; make tz-naive
-df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
-df["_t"] = df["_t"].dt.tz_convert(None)
-df["_t"] = df["_t"].fillna(pd.Timestamp("1900-01-01"))
+    # Harden dtypes (prevents pandas sort issues)
+    df["QID"] = df["QID"].astype(str)
+    df["City"] = df["City"].astype(str)
+    df["Country"] = df["Country"].astype(str)
+    df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
 
-df = df[df["Population"] > 0]
+    # Parse time robustly; make tz-naive
+    df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
+    df["_t"] = df["_t"].dt.tz_convert(None)
+    df["_t"] = df["_t"].fillna(pd.Timestamp("1900-01-01"))
 
-# One row per city QID: keep latest popTime, then largest pop
-df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False], kind="mergesort")
-df = df.drop_duplicates(subset=["QID"], keep="first")
+    df = df[df["Population"] > 0]
 
-df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
-df = df.drop(columns=["_t"])
-return df
+    # One row per city entity: keep latest popTime, then largest population
+    df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False], kind="mergesort")
+    df = df.drop_duplicates(subset=["QID"], keep="first")
+
+    # Safety: collapse exact same label duplicates
+    df = df.sort_values("Population", ascending=False)
+    df = df.drop_duplicates(subset=["City", "Country"], keep="first")
+
+    df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
+    df = df.drop(columns=["_t"])
+    return df
+
 
 
 
@@ -226,7 +226,8 @@ with st.sidebar:
 
 
 # ================== LOAD + MERGE DATA ==================
-df_all = load_wikidata_cities(top_n=500)
+df_all = df_all.drop_duplicates(subset=["City", "Country"], keep="first")
+
 
 # Filter/search
 df = df_all.copy()
@@ -458,6 +459,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
