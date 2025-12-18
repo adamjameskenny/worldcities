@@ -68,33 +68,19 @@ WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 @st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
 def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     query = f"""
-    SELECT ?cityLabel ?countryLabel ?pop ?popTime ?lat ?lon WHERE {{
-      {{
-        SELECT ?city (MAX(?t) AS ?maxT) WHERE {{
-          ?city wdt:P31/wdt:P279* wd:Q515 .
-          ?city p:P1082 ?st .
-          OPTIONAL {{ ?st pq:P585 ?t . }}
-        }}
-        GROUP BY ?city
-      }}
-
+    SELECT ?city ?cityLabel ?countryLabel ?pop ?popTime ?lat ?lon WHERE {{
       ?city wdt:P31/wdt:P279* wd:Q515 ;
             wdt:P17 ?country ;
             wdt:P625 ?coord ;
-            p:P1082 ?popStatement .
-
-      ?popStatement ps:P1082 ?pop .
-      OPTIONAL {{ ?popStatement pq:P585 ?popTime . }}
-
-      FILTER(!BOUND(?maxT) || !BOUND(?popTime) || ?popTime = ?maxT)
+            p:P1082 ?st .
+      ?st ps:P1082 ?pop .
+      OPTIONAL {{ ?st pq:P585 ?popTime . }}
 
       BIND(geof:latitude(?coord) AS ?lat)
       BIND(geof:longitude(?coord) AS ?lon)
 
       SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
     }}
-    ORDER BY DESC(?pop)
-    LIMIT {int(top_n)}
     """
 
     headers = {
@@ -102,32 +88,46 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
         "Accept": "application/sparql-results+json",
     }
 
-    r = requests.get(WIKIDATA_SPARQL_URL, params={"query": query, "format": "json"}, headers=headers, timeout=60)
+    r = requests.get(WIKIDATA_SPARQL_URL, params={"query": query, "format": "json"}, headers=headers, timeout=90)
     r.raise_for_status()
     data = r.json()["results"]["bindings"]
 
     rows = []
     for b in data:
-        city = b.get("cityLabel", {}).get("value", "")
-        country = b.get("countryLabel", {}).get("value", "")
-        pop = b.get("pop", {}).get("value", "")
-        lat = b.get("lat", {}).get("value", "")
-        lon = b.get("lon", {}).get("value", "")
-        pop_time = b.get("popTime", {}).get("value", "")
+        city_uri = b["city"]["value"]
+        qid = city_uri.rsplit("/", 1)[-1]
 
+        pop_time = b.get("popTime", {}).get("value")  # ISO string or missing
         rows.append({
-            "City": city,
-            "Country": country,
-            "Population": int(float(pop)) if pop else 0,
-            "Latitude": float(lat) if lat else None,
-            "Longitude": float(lon) if lon else None,
-            "PopYear": pop_time[:4] if pop_time else "",
+            "QID": qid,
+            "City": b.get("cityLabel", {}).get("value", ""),
+            "Country": b.get("countryLabel", {}).get("value", ""),
+            "Population": int(float(b.get("pop", {}).get("value", "0") or 0)),
+            "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
+            "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
+            "PopTime": pop_time or "",
+            "PopYear": (pop_time[:4] if pop_time else ""),
             "Source": "Wikidata (P1082)",
         })
 
     df = pd.DataFrame(rows)
-    df = df.dropna(subset=["City", "Country"])
-    df = df[df["Population"] > 0].sort_values("Population", ascending=False).reset_index(drop=True)
+    df = df.dropna(subset=["QID", "City", "Country"])
+    df = df[df["Population"] > 0]
+
+    # Prefer latest popTime; if missing popTime, treat as very old
+    df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce")
+    df["_t"] = df["_t"].fillna(pd.Timestamp("1900-01-01"))
+
+    # One row per city entity
+    df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False])
+    df = df.drop_duplicates(subset=["QID"], keep="first")
+
+    # Safety net: collapse exact same name+country duplicates (rare label collisions)
+    df = df.sort_values(["Population"], ascending=False)
+    df = df.drop_duplicates(subset=["City", "Country"], keep="first")
+
+    df = df.drop(columns=["_t"])
+    df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
     return df
 
 
@@ -443,6 +443,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
