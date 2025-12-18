@@ -141,8 +141,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     df = (
         df.sort_values("Population", ascending=False)
           .head(top_n)
-          .reset_index(drop=True)
-    )
+          .reset_index(drop=True))
     return df.drop(columns=["_t"])
 
 
@@ -218,4 +217,5 @@ st.caption(
     "Population source: Wikidata (P1082). Coordinates: Wikidata (P625). "
     "Definitions vary by city."
 )
+
 
