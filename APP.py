@@ -150,7 +150,6 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
         .head(int(top_n))
         .reset_index(drop=True)
     )
-
     df = df.drop(columns=["_t"])
     return df
 
@@ -465,6 +464,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
