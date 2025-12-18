@@ -60,6 +60,38 @@ def kpi_card(label: str, value: str, sub: str = ""):
         """,
         unsafe_allow_html=True,
     )
+import urllib.parse
+
+@st.cache_data(ttl=7 * 24 * 3600)  # cache for a week
+def wiki_summary(city: str, country: str) -> dict:
+    """
+    Returns {title, extract, url} using Wikipedia REST summary.
+    Tries 'City, Country' first, then 'City'.
+    """
+    def fetch(title: str):
+        t = urllib.parse.quote(title.replace(" ", "_"))
+        api = f"https://en.wikipedia.org/api/rest_v1/page/summary/{t}"
+        r = requests.get(api, headers={"User-Agent": "CityPopApp/1.0"}, timeout=10)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        # Skip disambiguation pages
+        if j.get("type") == "disambiguation":
+            return None
+        extract = j.get("extract") or ""
+        url = (j.get("content_urls", {}) or {}).get("desktop", {}).get("page", "")
+        return {"title": j.get("title", title), "extract": extract, "url": url}
+
+    # Common patterns
+    for title in (f"{city}, {country}", city):
+        out = fetch(title)
+        if out and out["extract"]:
+            # “short paragraph”: first paragraph only
+            first_para = out["extract"].split("\n\n")[0].strip()
+            out["extract"] = first_para
+            return out
+
+    return {"title": city, "extract": "No summary found.", "url": ""}
 
 # ------------------ SOURCES ------------------
 WPR_URL = "https://worldpopulationreview.com/static/cities.json"
@@ -138,15 +170,15 @@ with st.sidebar:
         st.rerun()
 
     top_n = st.select_slider(
-        "Top N cities",
-        options=[50, 100, 150, 200, 250],
-        value=250,
+        options=[100, 250, 500],
+        value=500,
     )
 
     map_n = st.select_slider(
         "Cities shown on map",
-        options=[25, 50, 100, 150, 200, 250],
-        value=min(100, top_n),
+        options=[50, 100, 150, 250, 500],
+        value=min(150, top_n),
+
     )
 
     df_all = load_data()
@@ -315,6 +347,36 @@ with tab_dash:
 # We'll store the selected city rank in session_state so Map + Table stay in sync
 if "selected_rank" not in st.session_state:
     st.session_state.selected_rank = None
+    st.subheader("City profile")
+sel_rank = st.session_state.get("selected_rank")
+if sel_rank is None:
+    st.info("Select a city in the Table tab.")
+else:
+    hit = df[df["Rank"] == sel_rank]
+    if hit.empty:
+        st.info("Selected city not in current filter.")
+    else:
+        row = hit.iloc[0]
+        info = wiki_summary(str(row["City"]), str(row["Country"]))
+
+        st.markdown(
+            f"""
+            <div style="background: rgba(2,6,23,0.55);
+                        border: 1px solid rgba(148,163,184,0.16);
+                        border-radius: 18px; padding: 14px;">
+              <div style="font-size:16px; font-weight:850; color:#e5e7eb;">
+                {info['title']}
+              </div>
+              <div style="color:#94a3b8; margin-top:6px; line-height:1.55;">
+                {info['extract']}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if info["url"]:
+            st.link_button("Open Wikipedia", info["url"])
+
 
 with tab_table:
     st.markdown("### Cities")
@@ -453,6 +515,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
