@@ -130,7 +130,8 @@ def load_data() -> pd.DataFrame:
 # ------------------ SIDEBAR ------------------
 with st.sidebar:
     st.markdown("## Filters")
-    st.markdown("### Controls")
+    st.caption("Refine the view. The dashboard updates instantly.")
+
 
     if st.button("Refresh data (clear cache)"):
         st.cache_data.clear()
@@ -163,6 +164,9 @@ with st.sidebar:
     selected_countries = st.multiselect("Countries", options=countries, default=[])
 
     query = st.text_input("Search", placeholder="City or country…")
+    only_mapped = st.toggle("Only cities with coordinates", value=False)
+    log_bubbles = st.toggle("Log bubble sizing", value=False)
+
 
     st.markdown("<hr style='border:0;height:1px;background:rgba(148,163,184,0.15);'/>", unsafe_allow_html=True)
     st.caption("Cache refresh: ~hourly (source dependent).")
@@ -185,6 +189,13 @@ df.insert(0, "Rank", df.index + 1)
 
 # bubble scaling
 df["PopScale"] = df["Population"].apply(lambda x: math.sqrt(max(int(x), 0)))
+if only_mapped:
+    df = df.dropna(subset=["Latitude", "Longitude"])
+if log_bubbles:
+    df["PopScale"] = df["Population"].apply(lambda x: math.log10(max(int(x), 1)))
+else:
+    df["PopScale"] = df["Population"].apply(lambda x: math.sqrt(max(int(x), 0)))
+
 
 # ------------------ HEADER ------------------
 source_chip = df["Source"].iloc[0] if not df.empty else "—"
@@ -437,6 +448,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
