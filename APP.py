@@ -124,20 +124,24 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
         })
 
     df = pd.DataFrame(rows)
-    df = df.dropna(subset=["QID", "City", "Country"])
-    df = df[df["Population"] > 0]
+    df = df.dropna(subset=["QID", "City", "Country"]).copy()
+    # harden dtypes (prevents pandas sort TypeError)
+df["QID"] = df["QID"].astype(str)
+df["City"] = df["City"].astype(str)
+df["Country"] = df["Country"].astype(str)
+df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
 
-    # Prefer latest popTime; if missing popTime, treat as very old
-    df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce")
-    df["_t"] = df["_t"].fillna(pd.Timestamp("1900-01-01"))
+# parse time robustly; make tz-naive
+df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
+df["_t"] = df["_t"].dt.tz_convert(None)
+df["_t"] = df["_t"].fillna(pd.Timestamp("1900-01-01"))
 
-    # One row per city entity
-    df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False])
-    df = df.drop_duplicates(subset=["QID"], keep="first")
+df = df[df["Population"] > 0]
 
-    # Safety net: collapse exact same name+country duplicates (rare label collisions)
-    df = df.sort_values(["Population"], ascending=False)
-    df = df.drop_duplicates(subset=["City", "Country"], keep="first")
+# One row per city QID: keep latest popTime, then largest pop
+df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False], kind="mergesort")
+df = df.drop_duplicates(subset=["QID"], keep="first")
+
 
     df = df.drop(columns=["_t"])
     df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
@@ -257,8 +261,7 @@ st.markdown(
         <div class="subtitle">Top {top_n} • Click a city in Table to view profile</div>
       </div>
     </div>
-    <span class="chip">Population source: Wikipedia</span>
-    <span class="chip">Coords source: GeoNames</span>
+    <span class="chip">Source: Wikidata (P1082 + P625)</span>
     <span class="chip">Updated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}</span>
     """,
     unsafe_allow_html=True,
@@ -456,6 +459,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
