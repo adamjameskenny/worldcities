@@ -55,9 +55,7 @@ def parse_pop(v) -> int:
 
 
 # ================== WIKIDATA ==================
-WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
-
-@st.cache_data(ttl=24 * 3600, show_spinner="Loading cities from Wikidata…")
+@st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
 def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     query = """
     PREFIX wd: <http://www.wikidata.org/entity/>
@@ -84,16 +82,15 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
         bd:serviceParam wikibase:language "en".
       }
     }
-    LIMIT 20000
     """
 
     headers = {
-        "User-Agent": "WorldCitiesApp/1.0 (https://streamlit.io)",
+        "User-Agent": "WorldCitiesApp/1.0",
         "Accept": "application/sparql-results+json",
     }
 
     r = requests.get(
-        WIKIDATA_SPARQL_URL,
+        "https://query.wikidata.org/sparql",
         params={"query": query, "format": "json"},
         headers=headers,
         timeout=90,
@@ -104,25 +101,23 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
 
     rows = []
     for b in data:
-        city_uri = b["city"]["value"]
-        qid = city_uri.rsplit("/", 1)[-1]
-        pop_time = b.get("popTime", {}).get("value")
+        qid = b["city"]["value"].rsplit("/", 1)[-1]
+        pop_time = b.get("popTime", {}).get("value", "")
 
         rows.append({
             "QID": qid,
             "City": b.get("cityLabel", {}).get("value", ""),
             "Country": b.get("countryLabel", {}).get("value", ""),
             "Population": parse_pop(b.get("pop", {}).get("value")),
-            "Latitude": float(b.get("lat", {}).get("value")),
-            "Longitude": float(b.get("lon", {}).get("value")),
-            "PopTime": pop_time or "",
+            "Latitude": float(b["lat"]["value"]),
+            "Longitude": float(b["lon"]["value"]),
+            "PopTime": pop_time,
             "Source": "Wikidata (P1082)",
         })
 
     df = pd.DataFrame(rows)
 
-    # ---- Clean + dedupe ----
-    df = df.dropna(subset=["QID", "City", "Country"]).copy()
+    df = df.dropna(subset=["QID", "City", "Country"])
     df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
 
     df["_t"] = pd.to_datetime(df["PopTime"], errors="coerce", utc=True)
@@ -130,19 +125,18 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
 
     df = df[df["Population"] > 0]
 
-    # latest population per city entity
     df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False])
     df = df.drop_duplicates(subset=["QID"], keep="first")
 
-    # safety: collapse same label duplicates
     df = df.sort_values("Population", ascending=False)
     df = df.drop_duplicates(subset=["City", "Country"], keep="first")
 
-    df = (
-        df.sort_values("Population", ascending=False)
-          .head(top_n)
-          .reset_index(drop=True))
-    return df.drop(columns=["_t"])
+    df = df.head(int(top_n)).reset_index(drop=True)
+
+    df = df.drop(columns=["_t"])
+
+    return df
+
 
 
 # ================== SIDEBAR ==================
@@ -217,5 +211,6 @@ st.caption(
     "Population source: Wikidata (P1082). Coordinates: Wikidata (P625). "
     "Definitions vary by city."
 )
+
 
 
