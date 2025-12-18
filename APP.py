@@ -101,21 +101,19 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     for b in data:
         city_uri = b["city"]["value"]
         qid = city_uri.rsplit("/", 1)[-1]
-        pop_time = b.get("popTime", {}).get("value")  # ISO string or missing
+        pop_time = b.get("popTime", {}).get("value")
 
-        rows.append(
-            {
-                "QID": qid,
-                "City": b.get("cityLabel", {}).get("value", ""),
-                "Country": b.get("countryLabel", {}).get("value", ""),
-                "Population": parse_pop(b.get("pop", {}).get("value")),
-                "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
-                "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
-                "PopTime": pop_time or "",
-                "PopYear": (pop_time[:4] if pop_time else ""),
-                "Source": "Wikidata (P1082)",
-            }
-        )
+        rows.append({
+            "QID": qid,
+            "City": b.get("cityLabel", {}).get("value", ""),
+            "Country": b.get("countryLabel", {}).get("value", ""),
+            "Population": parse_pop(b.get("pop", {}).get("value")),
+            "Latitude": float(b.get("lat", {}).get("value")) if b.get("lat") else None,
+            "Longitude": float(b.get("lon", {}).get("value")) if b.get("lon") else None,
+            "PopTime": pop_time or "",
+            "PopYear": pop_time[:4] if pop_time else "",
+            "Source": "Wikidata (P1082)",
+        })
 
     df = pd.DataFrame(rows)
     df = df.dropna(subset=["QID", "City", "Country"]).copy()
@@ -157,10 +155,6 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
 
     df = df.drop(columns=["_t"])
     return df
-
-
-
-
 
 
 
@@ -473,6 +467,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
