@@ -63,70 +63,73 @@ def kpi_card(label: str, value: str, sub: str = ""):
 
 
 # ================== WIKIPEDIA POPULATION (TOP CITIES) ==================
-WIKI_LARGEST_CITIES_URL = "https://en.wikipedia.org/wiki/List_of_largest_cities"
+WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 
-@st.cache_data(ttl=7 * 24 * 3600, show_spinner="Loading Wikipedia city populations…")
-def load_wikipedia_populations() -> pd.DataFrame:
+@st.cache_data(ttl=24 * 3600, show_spinner="Loading city data from Wikidata…")
+def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
+    query = f"""
+    SELECT ?cityLabel ?countryLabel ?pop ?popTime ?lat ?lon WHERE {{
+      {{
+        SELECT ?city (MAX(?t) AS ?maxT) WHERE {{
+          ?city wdt:P31/wdt:P279* wd:Q515 .
+          ?city p:P1082 ?st .
+          OPTIONAL {{ ?st pq:P585 ?t . }}
+        }}
+        GROUP BY ?city
+      }}
+
+      ?city wdt:P31/wdt:P279* wd:Q515 ;
+            wdt:P17 ?country ;
+            wdt:P625 ?coord ;
+            p:P1082 ?popStatement .
+
+      ?popStatement ps:P1082 ?pop .
+      OPTIONAL {{ ?popStatement pq:P585 ?popTime . }}
+
+      FILTER(!BOUND(?maxT) || !BOUND(?popTime) || ?popTime = ?maxT)
+
+      BIND(geof:latitude(?coord) AS ?lat)
+      BIND(geof:longitude(?coord) AS ?lon)
+
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+    }}
+    ORDER BY DESC(?pop)
+    LIMIT {int(top_n)}
+    """
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; CityPopApp/1.0; +https://streamlit.io)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "CityPopApp/1.0 (+https://streamlit.io)",
+        "Accept": "application/sparql-results+json",
     }
-    r = requests.get(WIKI_LARGEST_CITIES_URL, headers=headers, timeout=30)
+
+    r = requests.get(WIKIDATA_SPARQL_URL, params={"query": query, "format": "json"}, headers=headers, timeout=60)
     r.raise_for_status()
+    data = r.json()["results"]["bindings"]
 
-    tables = pd.read_html(r.text)
+    rows = []
+    for b in data:
+        city = b.get("cityLabel", {}).get("value", "")
+        country = b.get("countryLabel", {}).get("value", "")
+        pop = b.get("pop", {}).get("value", "")
+        lat = b.get("lat", {}).get("value", "")
+        lon = b.get("lon", {}).get("value", "")
+        pop_time = b.get("popTime", {}).get("value", "")
 
-    # Find the best candidate table: must have a "city"-like and "population"-like column
-    def score(t: pd.DataFrame) -> int:
-        cols = [str(c).lower() for c in t.columns]
-        s = 0
-        s += any("city" in c for c in cols) * 2
-        s += any("population" in c or "pop" in c for c in cols) * 2
-        s += any("country" in c for c in cols) * 2
-        return s
+        rows.append({
+            "City": city,
+            "Country": country,
+            "Population": int(float(pop)) if pop else 0,
+            "Latitude": float(lat) if lat else None,
+            "Longitude": float(lon) if lon else None,
+            "PopYear": pop_time[:4] if pop_time else "",
+            "Source": "Wikidata (P1082)",
+        })
 
-    best = max(tables, key=score)
-    df = best.copy()
-    df.columns = [str(c).strip() for c in df.columns]
+    df = pd.DataFrame(rows)
+    df = df.dropna(subset=["City", "Country"])
+    df = df[df["Population"] > 0].sort_values("Population", ascending=False).reset_index(drop=True)
+    return df
 
-    # Normalize by selecting columns via contains (no regex fragility)
-    def pick(col_contains):
-        for c in df.columns:
-            lc = str(c).lower()
-            if any(x in lc for x in col_contains):
-                return c
-        return None
-
-    city_c = pick(["city"])
-    country_c = pick(["country"])
-    pop_c = pick(["population", "pop"])
-
-    # Fallback: if country column missing, try "state" or "country/territory"
-    if country_c is None:
-        country_c = pick(["state", "territory"])
-
-    if city_c is None or pop_c is None or country_c is None:
-        raise RuntimeError(f"Could not parse Wikipedia table columns: {df.columns.tolist()}")
-
-    out = pd.DataFrame({
-        "City": df[city_c].astype(str),
-        "Country": df[country_c].astype(str),
-        "Population": (
-            df[pop_c].astype(str)
-            .str.replace(r"\[.*?\]", "", regex=True)
-            .str.replace(r"[^\d]", "", regex=True)
-        )
-    })
-
-    out["City"] = out["City"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
-    out["Country"] = out["Country"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
-    out["Population"] = pd.to_numeric(out["Population"], errors="coerce").fillna(0).astype("int64")
-
-    out = out.dropna(subset=["City", "Country"])
-    out = out[out["Population"] > 0].sort_values("Population", ascending=False).reset_index(drop=True)
-    out["Source"] = "Wikipedia (List of largest cities)"
-    return out
 
 
 
@@ -445,5 +448,6 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
