@@ -78,14 +78,63 @@ return df.reset_index(drop=True)
 
 # ---------- LOAD DATA ----------
 try:
-    df = load_data(top_n=100)
-except Exception:
-    st.error("Failed to load city population data.")
-    st.stop()
+   @st.cache_data(ttl=3600)
+def load_data(top_n: int = 100) -> pd.DataFrame:
 
-if df is None or df.empty:
-    st.error("No population data available.")
-    st.stop()
+    # ---------- PRIMARY SOURCE ----------
+    try:
+        r = requests.get(WPR_URL, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+
+        df = pd.DataFrame(r.json())
+        df = df.rename(columns={
+            "name": "City",
+            "country": "Country",
+            "population": "Population",
+            "lat": "Latitude",
+            "lng": "Longitude"
+        })
+
+        df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
+        df["Latitude"] = pd.to_numeric(df.get("Latitude"), errors="coerce")
+        df["Longitude"] = pd.to_numeric(df.get("Longitude"), errors="coerce")
+
+        df = df.sort_values("Population", ascending=False).head(top_n)
+        df["Source"] = "WorldPopulationReview"
+        return df.reset_index(drop=True)
+
+    except Exception:
+        pass  # fall back cleanly
+
+    # ---------- FALLBACK: GEONAMES ----------
+    r = requests.get(GEONAMES_URL, headers=HEADERS, timeout=30)
+    r.raise_for_status()
+
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    with z.open("cities15000.txt") as f:
+        cols = [
+            "geonameid","name","asciiname","alternatenames","latitude","longitude",
+            "feature_class","feature_code","country_code","cc2","admin1_code",
+            "admin2_code","admin3_code","admin4_code","population","elevation",
+            "dem","timezone","modification_date"
+        ]
+        gdf = pd.read_csv(f, sep="\t", header=None, names=cols, low_memory=False)
+
+    df = gdf.rename(columns={
+        "name": "City",
+        "country_code": "Country",
+        "population": "Population",
+        "latitude": "Latitude",
+        "longitude": "Longitude",
+    })
+
+    df = df[["City", "Country", "Population", "Latitude", "Longitude"]]
+    df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
+
+    df = df.sort_values("Population", ascending=False).head(top_n)
+    df["Source"] = "GeoNames"
+    return df.reset_index(drop=True)
+
 
 # ---------- HEADER ----------
 st.markdown(
@@ -168,5 +217,6 @@ st.caption(
     "Population figures are estimates, auto-refreshed hourly. "
     "True real-time city population tracking does not exist."
 )
+
 
 
