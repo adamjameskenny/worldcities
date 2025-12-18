@@ -223,7 +223,83 @@ with c5: kpi_card("Cities ≥ 10M", fmt_int(over_10m), f"Total shown: {fmt_int(t
 
 
 # ------------------ TABS ------------------
-tab_map, tab_table, tab_charts, tab_about = st.tabs(["Map", "Table", "Charts", "About"])
+tab_dash, tab_map, tab_table, tab_charts, tab_about = st.tabs(["Dashboard", "Map", "Table", "Charts", "About"])
+with tab_dash:
+    left, right = st.columns([1.6, 1], gap="large")
+
+    with left:
+        st.subheader("Map")
+        map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
+        if map_df.empty:
+            st.info("No coordinates available for the current selection.")
+        else:
+            fig_map = px.scatter_mapbox(
+                map_df,
+                lat="Latitude",
+                lon="Longitude",
+                size="PopScale",
+                hover_name="City",
+                hover_data={"Country": True, "Population": ":,", "Rank": True, "PopScale": False},
+                zoom=1,
+                height=640,
+            )
+            fig_map.update_layout(mapbox_style="carto-darkmatter", margin=dict(l=0, r=0, t=0, b=0))
+
+            # highlight selected
+            selected = None
+            if st.session_state.get("selected_rank") is not None:
+                hit = df[df["Rank"] == st.session_state.selected_rank]
+                if not hit.empty:
+                    selected = hit.iloc[0]
+
+            if selected is not None and pd.notna(selected["Latitude"]) and pd.notna(selected["Longitude"]):
+                hi = pd.DataFrame([selected])
+                fig_hi = px.scatter_mapbox(hi, lat="Latitude", lon="Longitude", hover_name="City", zoom=2, height=640)
+                fig_hi.update_traces(marker={"size": 22, "opacity": 0.95})
+                for tr in fig_hi.data:
+                    fig_map.add_trace(tr)
+
+            st.plotly_chart(fig_map, use_container_width=True)
+
+    with right:
+        st.subheader("Selected city")
+        sel_rank = st.session_state.get("selected_rank")
+        if sel_rank is None:
+            st.info("Select a city in the Table tab to see details here.")
+        else:
+            hit = df[df["Rank"] == sel_rank]
+            if hit.empty:
+                st.info("Selected city not in current filter.")
+            else:
+                row = hit.iloc[0]
+                st.markdown(
+                    f"""
+                    <div style="background: rgba(2,6,23,0.55);
+                                border: 1px solid rgba(148,163,184,0.16);
+                                border-radius: 18px; padding: 14px;">
+                      <div style="font-size:18px; font-weight:850; color:#e5e7eb;">
+                        {row['City']}
+                      </div>
+                      <div style="color:#94a3b8; margin-top:4px;">
+                        {row['Country']} • Rank {int(row['Rank'])}
+                      </div>
+                      <div style="margin-top:10px; color:#e5e7eb;">
+                        Population: <b>{fmt_int(row['Population'])}</b>
+                      </div>
+                      <div style="color:#94a3b8; margin-top:6px;">
+                        Source: {row['Source']}
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.write("")
+        st.subheader("Top 10")
+        top10 = df.head(10)[["Rank", "City", "Country", "Population"]].copy()
+        top10["Population"] = top10["Population"].map(fmt_int)
+        st.dataframe(top10, use_container_width=True, height=360, hide_index=True)
+
 
 # We'll store the selected city rank in session_state so Map + Table stay in sync
 if "selected_rank" not in st.session_state:
@@ -361,5 +437,6 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
