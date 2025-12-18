@@ -103,7 +103,9 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    top_n = st.select_slider("Top N cities", options=[20, 50, 100], value=100)
+  top_n = st.select_slider("Top N cities", options=[50, 100, 150, 200, 250], value=250)
+map_n = st.select_slider("Cities shown on map", options=[25, 50, 100, 150, 250], value=min(100, top_n))
+
 
     df_all = load_data()
     max_pop = int(df_all["Population"].max()) if not df_all.empty else 0
@@ -173,7 +175,8 @@ st.write("")
 tab_map, tab_table, tab_charts, tab_about = st.tabs(["Map", "Table", "Charts", "About"])
 
 with tab_map:
-    map_df = df.dropna(subset=["Latitude", "Longitude"]).copy()
+   map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
+
     if map_df.empty:
         st.info("No coordinates available for the current selection.")
     else:
@@ -241,3 +244,4 @@ with tab_about:
 - Fallback: GeoNames (stable, broad coverage; populations are also estimates).
         """
     )
+
