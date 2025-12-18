@@ -170,9 +170,10 @@ with st.sidebar:
         st.rerun()
 
     top_n = st.select_slider(
-        options=[100, 250, 500],
-        value=500,
-    )
+    "Top N cities",
+    options=[100, 250, 500],
+    value=500,
+)
 
     map_n = st.select_slider(
         "Cities shown on map",
@@ -515,6 +516,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
