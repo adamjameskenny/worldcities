@@ -438,6 +438,11 @@ with tab_charts:
         fig_tree = px.treemap(df, path=["Country", "City"], values="Population", height=720)
         fig_tree.update_layout(margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_tree, use_container_width=True)
+        st.subheader("Population distribution")
+fig_hist = px.histogram(df, x="Population", nbins=30, height=320)
+fig_hist.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+st.plotly_chart(fig_hist, use_container_width=True)
+
 
 with tab_about:
     st.markdown(
@@ -448,6 +453,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
