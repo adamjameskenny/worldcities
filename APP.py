@@ -103,60 +103,80 @@ HEADERS = {
 }
 
 # ------------------ DATA ------------------
-@st.cache_data(ttl=3600)
-def load_data() -> pd.DataFrame:
-    # Primary: WorldPopulationReview
-    try:
-        r = requests.get(WPR_URL, headers=HEADERS, timeout=15)
-        r.raise_for_status()
-        df = pd.DataFrame(r.json())
-        df = df.rename(
-            columns={
-                "name": "City",
-                "country": "Country",
-                "population": "Population",
-                "lat": "Latitude",
-                "lng": "Longitude",
-                "latitude": "Latitude",
-                "longitude": "Longitude",
-            }
-        )
-        df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
-        df["Latitude"] = pd.to_numeric(df.get("Latitude"), errors="coerce")
-        df["Longitude"] = pd.to_numeric(df.get("Longitude"), errors="coerce")
-        df["Source"] = "WorldPopulationReview"
-        return df[["City", "Country", "Population", "Latitude", "Longitude", "Source"]].dropna(subset=["City", "Country"])
-    except Exception:
-        pass
+import os
+import io
+import zipfile
+import re
+import pandas as pd
+import requests
+import streamlit as st
 
-    # Fallback: GeoNames
-    r = requests.get(GEONAMES_URL, headers=HEADERS, timeout=30)
+UCDB_ZIP_URL = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_UCDB_GLOBE_R2024A/GHS_UCDB_GLOBE_R2024A/V1-1/GHS_UCDB_GLOBE_R2024A_V1_1.zip"
+
+@st.cache_data(ttl=7*24*3600, show_spinner="Downloading GHSL UCDB…")
+def _download_ucdb_zip() -> bytes:
+    r = requests.get(UCDB_ZIP_URL, timeout=120)
     r.raise_for_status()
+    return r.content
 
-    z = zipfile.ZipFile(io.BytesIO(r.content))
-    with z.open("cities15000.txt") as f:
-        cols = [
-            "geonameid", "name", "asciiname", "alternatenames", "latitude", "longitude",
-            "feature_class", "feature_code", "country_code", "cc2", "admin1_code",
-            "admin2_code", "admin3_code", "admin4_code", "population", "elevation",
-            "dem", "timezone", "modification_date",
-        ]
-        gdf = pd.read_csv(f, sep="\t", header=None, names=cols, low_memory=False)
+def _pick_first_csv(z: zipfile.ZipFile) -> str:
+    csvs = [n for n in z.namelist() if n.lower().endswith(".csv")]
+    if not csvs:
+        raise RuntimeError("UCDB zip contains no CSV files.")
+    # Prefer anything that looks like the main UCDB table
+    csvs.sort(key=lambda n: (("ucdb" not in n.lower()), len(n)))
+    return csvs[0]
 
-    df = gdf.rename(
-        columns={
-            "name": "City",
-            "country_code": "Country",
-            "population": "Population",
-            "latitude": "Latitude",
-            "longitude": "Longitude",
-        }
-    )
-    df["Population"] = pd.to_numeric(df["Population"], errors="coerce").fillna(0).astype("int64")
-    df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
-    df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
-    df["Source"] = "GeoNames"
-    return df[["City", "Country", "Population", "Latitude", "Longitude", "Source"]].dropna(subset=["City", "Country"])
+def _find_col(cols, patterns):
+    cols_l = {c.lower(): c for c in cols}
+    for p in patterns:
+        rx = re.compile(p)
+        for lc, orig in cols_l.items():
+            if rx.search(lc):
+                return orig
+    return None
+
+@st.cache_data(ttl=24*3600, show_spinner="Loading city table…")
+def load_data(top_n: int = 500) -> pd.DataFrame:
+    content = _download_ucdb_zip()
+    z = zipfile.ZipFile(io.BytesIO(content))
+
+    csv_name = _pick_first_csv(z)
+    with z.open(csv_name) as f:
+        df = pd.read_csv(f, low_memory=False)
+
+    # Heuristics for common fields (UCDB schema can evolve)
+    city_col = _find_col(df.columns, [r"^name$", r"city", r"uc_name"])
+    country_col = _find_col(df.columns, [r"country", r"cntr", r"iso"])
+    lat_col = _find_col(df.columns, [r"^lat", r"latitude"])
+    lon_col = _find_col(df.columns, [r"^lon", r"lng", r"longitude"])
+
+    # Try to find a “population in 2025” column (or nearest)
+    pop_col = _find_col(df.columns, [r"pop.*2025", r"p_?2025", r"population.*2025"])
+    if pop_col is None:
+        # fall back to any population column
+        pop_col = _find_col(df.columns, [r"^pop", r"population"])
+
+    if not all([city_col, country_col, pop_col]):
+        raise RuntimeError(
+            f"Could not detect required columns. Detected: city={city_col}, country={country_col}, pop=({pop_col})."
+        )
+
+    out = pd.DataFrame({
+        "City": df[city_col].astype(str),
+        "Country": df[country_col].astype(str),
+        "Population": pd.to_numeric(df[pop_col], errors="coerce"),
+        "Latitude": pd.to_numeric(df[lat_col], errors="coerce") if lat_col else pd.NA,
+        "Longitude": pd.to_numeric(df[lon_col], errors="coerce") if lon_col else pd.NA,
+    })
+
+    out["Population"] = out["Population"].fillna(0).astype("int64")
+    out["Source"] = "GHSL UCDB (JRC)"
+
+    out = out.dropna(subset=["City", "Country"])
+    out = out.sort_values("Population", ascending=False).head(top_n).reset_index(drop=True)
+    return out
+
 
 
 # ------------------ SIDEBAR ------------------
@@ -516,6 +536,7 @@ with tab_about:
 - Primary source may occasionally block hosts; app falls back to GeoNames.
         """
     )
+
 
 
 
