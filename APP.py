@@ -121,7 +121,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
     df = df.dropna(subset=["QID", "City", "Country"]).copy()
 
     # Harden dtypes (prevents pandas sort issues)
-        df["QID"] = df["QID"].astype(str)
+    df["QID"] = df["QID"].astype(str)
     df["City"] = df["City"].astype(str)
     df["Country"] = df["Country"].astype(str)
     df["Population"] = (
@@ -473,6 +473,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
