@@ -185,7 +185,7 @@ st.write("")
 tab_map, tab_table, tab_charts, tab_about = st.tabs(["Map", "Table", "Charts", "About"])
 
 with tab_map:
-   map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
+    map_df = df.head(map_n).dropna(subset=["Latitude", "Longitude"]).copy()
 
     if map_df.empty:
         st.info("No coordinates available for the current selection.")
@@ -196,7 +196,12 @@ with tab_map:
             lon="Longitude",
             size="PopScale",
             hover_name="City",
-            hover_data={"Country": True, "Population": ":,", "Rank": True, "PopScale": False},
+            hover_data={
+                "Country": True,
+                "Population": ":,",
+                "Rank": True,
+                "PopScale": False,
+            },
             zoom=1,
             height=680,
         )
@@ -205,6 +210,7 @@ with tab_map:
             margin=dict(l=0, r=0, t=0, b=0),
         )
         st.plotly_chart(fig_map, use_container_width=True)
+
 
 with tab_table:
     show_cols = ["Rank", "City", "Country", "Population", "Source"]
@@ -219,6 +225,7 @@ with tab_table:
 
 with tab_charts:
     left, right = st.columns([1, 1])
+log_x = st.toggle("Log scale (Population)", value=False)
 
     with left:
         k = st.select_slider("Bar chart: Top K", options=[10, 20, 50], value=min(20, len(df)))
@@ -231,6 +238,8 @@ with tab_charts:
         )
         fig_bar.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_bar, use_container_width=True)
+if log_x:
+    fig_bar.update_xaxes(type="log")
 
     with right:
         fig_country = px.treemap(
@@ -254,5 +263,6 @@ with tab_about:
 - Fallback: GeoNames (stable, broad coverage; populations are also estimates).
         """
     )
+
 
 
