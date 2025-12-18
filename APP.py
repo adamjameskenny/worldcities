@@ -142,9 +142,9 @@ df = df[df["Population"] > 0]
 df = df.sort_values(["QID", "_t", "Population"], ascending=[True, False, False], kind="mergesort")
 df = df.drop_duplicates(subset=["QID"], keep="first")
 
-df = df.drop(columns=["_t"])
 df = df.sort_values("Population", ascending=False).head(int(top_n)).reset_index(drop=True)
-    return df
+df = df.drop(columns=["_t"])
+return df
 
 
 
@@ -458,6 +458,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
