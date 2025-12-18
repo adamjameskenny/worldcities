@@ -134,6 +134,7 @@ def load_wikidata_cities(top_n: int = 500) -> pd.DataFrame:
 
 
 
+
 # ================== GEO COORDINATES (GEONAMES) ==================
 GEONAMES_URL = "https://download.geonames.org/export/dump/cities15000.zip"
 HEADERS = {"User-Agent": "CityPopApp/1.0 (+https://streamlit.io)"}
@@ -209,12 +210,8 @@ with st.sidebar:
 
 
 # ================== LOAD + MERGE DATA ==================
-pop_df = load_wikipedia_populations()
+df_all = load_wikidata_cities(top_n=500)
 
-# Country names from Wikipedia won't match GeoNames country codes. We only use GeoNames by city name.
-coords_df = load_geonames_coords()
-
-# Merge on City only (best-effort). For top cities this works reasonably well.
 df_all = pop_df.merge(coords_df[["City", "Latitude", "Longitude"]], on="City", how="left")
 
 # Filter/search
@@ -448,6 +445,7 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
 
 
 
