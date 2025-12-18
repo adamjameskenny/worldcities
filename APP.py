@@ -67,13 +67,20 @@ WIKI_LARGEST_CITIES_URL = "https://en.wikipedia.org/wiki/List_of_largest_cities"
 
 @st.cache_data(ttl=7 * 24 * 3600, show_spinner="Loading Wikipedia city populations…")
 def load_wikipedia_populations() -> pd.DataFrame:
-    tables = pd.read_html(WIKI_LARGEST_CITIES_URL)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; CityPopApp/1.0; +https://streamlit.io)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    r = requests.get(WIKI_LARGEST_CITIES_URL, headers=headers, timeout=30)
+    r.raise_for_status()
 
-    # Usually the first table is the ranked list
+    # IMPORTANT: pass HTML content, not the URL (avoids urllib blocks)
+    tables = pd.read_html(r.text)
+
     df = tables[0].copy()
     df.columns = [str(c).strip().lower() for c in df.columns]
 
-    # Find city/country/pop columns robustly
     def find_col(patterns):
         for p in patterns:
             rx = re.compile(p)
@@ -94,21 +101,20 @@ def load_wikipedia_populations() -> pd.DataFrame:
         "Country": df[country_c].astype(str),
         "Population": (
             df[pop_c].astype(str)
-            .str.replace(r"\[.*?\]", "", regex=True)      # strip citations
-            .str.replace(r"[^\d]", "", regex=True)        # keep digits only
-        )
+            .str.replace(r"\[.*?\]", "", regex=True)   # strip citations
+            .str.replace(r"[^\d]", "", regex=True)     # digits only
+        ),
     })
 
-    out["Population"] = pd.to_numeric(out["Population"], errors="coerce").fillna(0).astype("int64")
-
-    # Clean city names (remove footnotes, extra text)
     out["City"] = out["City"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
     out["Country"] = out["Country"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
+    out["Population"] = pd.to_numeric(out["Population"], errors="coerce").fillna(0).astype("int64")
 
     out["Source"] = "Wikipedia (List of largest cities)"
     out = out.dropna(subset=["City", "Country"])
     out = out[out["Population"] > 0].sort_values("Population", ascending=False).reset_index(drop=True)
     return out
+
 
 
 # ================== GEO COORDINATES (GEONAMES) ==================
@@ -425,3 +431,4 @@ with tab_about:
 - This app caches data to be fast and avoid rate limits.
         """
     )
+
